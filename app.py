@@ -4,26 +4,37 @@ from cfg import CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET
 
 app = Flask(__name__)
 
-@app.route('/')
-def hello_world():
-    return 'Hello, World!'
-
-@app.route('/twitter')
-def twitter_route():
-    return get_latest_tweets(['binanceliteau', 'binanceacademy', 'binanceresearch'])
-
-@app.route('/twitter_get', methods=['GET'])
+@app.route('/twitter', methods=['GET'])
 def twitter_get():
-    user = request.args.getlist('user')
-    print(user)
-    return get_latest_tweets(user)
+    kwargs = request.args.copy()
+    users = kwargs.poplist('user')
+    full = kwargs.pop('full', None)
+    return get_latest_tweets(users, full, **kwargs.to_dict())
 
-def get_latest_tweets(usernames):
-    api = twitter.Api(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET)
+def get_latest_tweets(users, full, **kwargs):
+    '''
+    Accepted kwargs are here: https://python-twitter.readthedocs.io/en/latest/twitter.html#twitter.api.Api.GetUserTimeline
+    :param users: list of screen_name
+    :param full: to view full response or not
+    :return:
+    '''
+    api = twitter.Api(CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET, tweet_mode='extended')
+    api.SetCacheTimeout(0)
     twitter_obj = {}
-    for username in usernames:
-        statuses = api.GetUserTimeline(screen_name=username, count=5)
-        twitter_obj[username] = [s.text for s in statuses]
+    for k, v in kwargs.items():
+        if v == '1':
+            kwargs[k] = True
+        elif v == '0':
+            kwargs[k] = False
+    try:
+        for user in users:
+            statuses = api.GetUserTimeline(screen_name=user, **kwargs)
+            if full == '1':
+                twitter_obj[user] = [s.AsDict() for s in statuses]
+            else:
+                twitter_obj[user] = [s.full_text for s in statuses]
+    except TypeError as e:
+        return jsonify({'error': str(e)})
     return jsonify(twitter_obj)
 
 if __name__ == '__main__':
