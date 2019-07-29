@@ -9,7 +9,13 @@ def twitter_get():
     kwargs = request.args.copy()
     users = kwargs.poplist('user')
     full = kwargs.pop('full', None)
-    return get_latest_tweets(users, full, **kwargs.to_dict())
+    resp_obj = get_latest_tweets(users, full, **kwargs.to_dict())
+    resp = jsonify(resp_obj)
+    if 'error' in resp_obj:
+        resp.status_code = 500
+    else:
+        resp.status_code = 200
+    return resp
 
 def get_latest_tweets(users, full, **kwargs):
     '''
@@ -34,8 +40,9 @@ def get_latest_tweets(users, full, **kwargs):
             else:
                 twitter_obj[user] = [s.full_text for s in statuses]
     except TypeError as e:
-        return jsonify({'error': str(e)})
-    return jsonify(twitter_obj)
+        twitter_obj = {'error': str(e)}
+    return twitter_obj
+
 
 if __name__ == '__main__':
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=5001)
