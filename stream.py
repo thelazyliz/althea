@@ -21,12 +21,13 @@ insert_logger.addHandler(fh)
 
 class MyStreamListener(tweepy.StreamListener):
 
-    def __init__(self):
+    def __init__(self, chat_id):
         tweepy.StreamListener.__init__(self)
         self.bot = telegram.Bot(token=ALTHEA_TOKEN)
+        self.chat_id = chat_id
 
     def send_telegram_message(self, message):
-        self.bot.send_message(chat_id=TG_CHATS['test'], text=message, parse_mode=telegram.ParseMode.HTML)
+        self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode=telegram.ParseMode.HTML)
 
     def on_status(self, status):
         if status.truncated:
@@ -41,8 +42,8 @@ class MyStreamListener(tweepy.StreamListener):
 
 class Twitter2Tg:
 
-    def __init__(self):
-        self.chat_id = TG_CHATS['test']
+    def __init__(self, chat_name):
+        self.chat_id = TG_CHATS[chat_name]
         self.filename = 'following.txt'
         self.bot = telegram.Bot(token=ALTHEA_TOKEN)
         auth = tweepy.OAuthHandler(CONSUMER_KEY, CONSUMER_SECRET)
@@ -63,7 +64,7 @@ class Twitter2Tg:
 
     def setup_twitter(self):
         try:
-            my_stream_listener = MyStreamListener()
+            my_stream_listener = MyStreamListener(self.chat_id)
             self.my_stream = tweepy.Stream(auth=self.api.auth, listener=my_stream_listener, tweet_mode='extended')
             logging.info(self.following)
             self.my_stream.filter(follow=self.following.values(), is_async=True)
@@ -147,4 +148,10 @@ class Twitter2Tg:
 
 
 if __name__ == '__main__':
-    t2tg = Twitter2Tg()
+    chat = input('Which chat are you posting to? Press 1 for nhb and 2 for test: ')
+    if chat == '1':
+        t2tg = Twitter2Tg('nhb')
+    elif chat == '2':
+        t2tg = Twitter2Tg('test')
+    else:
+        print('Invalid option.')
