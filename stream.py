@@ -82,8 +82,8 @@ class Twitter2Tg:
                 exclude_replies=True, include_rts=False
             )
             insert_logger.info(self.following)
-            # self.my_stream.filter(follow=self.following.values(), is_async=True)
-            self.my_stream.filter(track=['binance'], is_async=True)
+            self.my_stream.filter(follow=self.following.values(), is_async=True)
+            # self.my_stream.filter(track=['binance'], is_async=True)
         except Exception as e:
             insert_logger.exception(str(e))
 
