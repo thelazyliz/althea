@@ -12,8 +12,8 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 insert_logger = logging.getLogger('stream.py')
-fh = logging.FileHandler(f'./logs/stream_{int(time.time())}.log')
-fh.setLevel(logging.DEBUG)
+fh = logging.FileHandler(f'./logs/stream.log')
+fh.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 fh.setFormatter(formatter)
 insert_logger.addHandler(fh)
@@ -21,56 +21,71 @@ insert_logger.addHandler(fh)
 
 class MyStreamListener(tweepy.StreamListener):
 
-    def __init__(self, chat_id):
+    def __init__(self, chat_id, following_names):
         tweepy.StreamListener.__init__(self)
         self.bot = telegram.Bot(token=ALTHEA_TOKEN)
         self.chat_id = chat_id
+        self.following_names = following_names
 
     def send_telegram_message(self, message):
         self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode=telegram.ParseMode.HTML)
 
     def on_status(self, status):
-        if status.truncated:
-            tweet = status.extended_tweet['full_text']
+        if not hasattr(status, 'retweeted_status') and status.author.screen_name.lower() in self.following_names:
+            print(f'PASSED: {status.text}')
+            if status.truncated:
+                tweet = status.extended_tweet['full_text']
+            else:
+                tweet = status.text
+            status_str = f"<b>Author</b>: {status.author.screen_name}\n" \
+                         f"<b>Tweet</b>: {tweet}\n" \
+                         f"<b>Link</b>: https://www.twitter.com/{status.user.screen_name}/status/{status.id_str}"
+            self.send_telegram_message(status_str)
         else:
-            tweet = status.text
-        status_str = f"<b>Author</b>: {status.author.screen_name}\n" \
-                     f"<b>Tweet</b>: {tweet}\n" \
-                     f"<b>Link</b>: https://www.twitter.com/{status.user.screen_name}/status/{status.id_str}"
-        self.send_telegram_message(status_str)
+            print(f'SKIPPED: {status.text}')
 
 
 class Twitter2Tg:
 
     def __init__(self, chat_name):
+        insert_logger.info(f'starting new process for {chat_name}')
         self.chat_id = TG_CHATS[chat_name]
+        self.following = {}
+        self.my_stream = None
         self.filename = 'following.txt'
         self.bot = telegram.Bot(token=ALTHEA_TOKEN)
         auth = tweepy.OAuthHandler(CONSUMER_KEY, CONSUMER_SECRET)
         auth.set_access_token(ACCESS_KEY, ACCESS_SECRET)
         self.api = tweepy.API(auth)
         self.init_following_ids()
-        self.setup_twitter()
+        if self.following:
+            self.setup_twitter()
+        else:
+            logging.info(f'following.txt is empty')
         self.setup_tg()
 
     def init_following_ids(self):
         try:
             with open(self.filename, 'r') as f:
                 following_names = f.read().splitlines()
-            following_ids = [user.id_str for user in self.api.lookup_users(screen_names=following_names)]
-            self.following = dict(zip(following_names, following_ids))
+            if following_names:
+                following_ids = [user.id_str for user in self.api.lookup_users(screen_names=following_names)]
+                self.following = dict(zip(following_names, following_ids))
         except Exception as e:
-            logging.exception(str(e))
+            insert_logger.exception(str(e))
 
     def setup_twitter(self):
         try:
-            my_stream_listener = MyStreamListener(self.chat_id)
-            self.my_stream = tweepy.Stream(auth=self.api.auth, listener=my_stream_listener, tweet_mode='extended')
-            logging.info(self.following)
-            self.my_stream.filter(follow=self.following.values(), is_async=True)
-            # self.my_stream.filter(track=['binance'], is_async=True)
+            my_stream_listener = MyStreamListener(self.chat_id, list(self.following.keys()))
+            self.my_stream = tweepy.Stream(
+                auth=self.api.auth, listener=my_stream_listener, tweet_mode='extended',
+                exclude_replies=True, include_rts=False
+            )
+            insert_logger.info(self.following)
+            # self.my_stream.filter(follow=self.following.values(), is_async=True)
+            self.my_stream.filter(track=['binance'], is_async=True)
         except Exception as e:
-            logging.exception(str(e))
+            insert_logger.exception(str(e))
 
     def setup_tg(self):
         try:
@@ -84,7 +99,7 @@ class Twitter2Tg:
             dispatcher.add_handler(tg_check_follow_handler)
             updater.start_polling()
         except Exception as e:
-            logging.exception(str(e))
+            insert_logger.exception(str(e))
 
 
     def follow(self, bot, update):
@@ -104,14 +119,15 @@ class Twitter2Tg:
             with open(self.filename, 'a+') as f:
                 f.write(f'{args.lower()}\n')
             self.following[args.lower()] = user[0].id_str
-            self.my_stream.disconnect()
+            if self.my_stream:
+                self.my_stream.disconnect()
             self.setup_twitter()
             update.message.reply_text(f'{args} has been added to your following.')
         except TweepError as e:
             if '17' in str(e):
                 update.message.reply_text('Unable to find the username specified.')
         except Exception as e:
-            logging.exception(str(e))
+            insert_logger.exception(str(e))
 
     def unfollow(self, bot, update):
         if update.message.chat.id != self.chat_id:
@@ -138,7 +154,7 @@ class Twitter2Tg:
             self.setup_twitter()
             update.message.reply_text(f'{args} has been unfollowed.')
         except Exception as e:
-            logging.exception(str(e))
+            insert_logger.exception(str(e))
 
     def check_follow(self, bot, update):
         if update.message.chat.id != self.chat_id:
