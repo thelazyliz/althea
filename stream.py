@@ -31,7 +31,9 @@ class MyStreamListener(tweepy.StreamListener):
         self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode=telegram.ParseMode.HTML)
 
     def on_status(self, status):
-        if not hasattr(status, 'retweeted_status') and status.author.screen_name.lower() in self.following_names:
+        # if not hasattr(status, 'retweeted_status') and not status.in_reply_to_status_id and status.author.screen_name.lower() in self.following_names:
+        if not hasattr(status, 'retweeted_status') and not status.in_reply_to_status_id:
+            print(status)
             print(f'PASSED: {status.text}')
             if status.truncated:
                 tweet = status.extended_tweet['full_text']
