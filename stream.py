@@ -42,7 +42,7 @@ class MyStreamListener(tweepy.StreamListener):
             status_str = f"<b>Author</b>: {status.author.screen_name}\n" \
                          f"<b>Tweet</b>: {tweet}\n" \
                          f"<b>Link</b>: https://www.twitter.com/{status.user.screen_name}/status/{status.id_str}"
-            self.send_telegram_message(status_str)
+            threading.Thread(target=self.send_telegram_message, args=(status_str,)).start()
         else:
             print(f'SKIPPED: {status.text}')
 
@@ -63,7 +63,7 @@ class Twitter2Tg:
         if self.following:
             self.setup_twitter()
         else:
-            logging.info(f'following.txt is empty')
+            insert_logger.info(f'following.txt is empty')
         self.setup_tg()
 
     def init_following_ids(self):
@@ -159,11 +159,13 @@ class Twitter2Tg:
             insert_logger.exception(str(e))
 
     def check_follow(self, bot, update):
-        if update.message.chat.id != self.chat_id:
-            update.message.reply_text('You are not authorized to use this bot.')
-            return
-        update.message.reply_text(f'You are following: {", ".join(self.following.keys())}')
-
+        try:
+            if update.message.chat.id != self.chat_id:
+                update.message.reply_text('You are not authorized to use this bot.')
+                return
+            update.message.reply_text(f'You are following: {", ".join(self.following.keys())}')
+        except Exception as e:
+            insert_logger.exception(str(e))
 
 if __name__ == '__main__':
     chat = input('Which chat are you posting to? Press 1 for nhb and 2 for test: ')
