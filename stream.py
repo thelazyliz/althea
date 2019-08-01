@@ -28,23 +28,26 @@ class MyStreamListener(tweepy.StreamListener):
         self.following_names = following_names
 
     def send_telegram_message(self, message):
-        self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode=telegram.ParseMode.HTML)
+        try:
+            self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode=telegram.ParseMode.HTML)
+        except Exception as e:
+            insert_logger.exception(str(e))
 
     def on_status(self, status):
+        link = f'https://www.twitter.com/{status.user.screen_name}/status/{status.id_str}'
         if not hasattr(status, 'retweeted_status') and not status.in_reply_to_status_id and status.author.screen_name.lower() in self.following_names:
         # if not hasattr(status, 'retweeted_status') and not status.in_reply_to_status_id:
-            print(status)
-            print(f'PASSED: {status.text}')
+            insert_logger.info(f'PASSED: {status.text}\nLINK: {link}')
             if status.truncated:
                 tweet = status.extended_tweet['full_text']
             else:
                 tweet = status.text
             status_str = f"<b>Author</b>: {status.author.screen_name}\n" \
                          f"<b>Tweet</b>: {tweet}\n" \
-                         f"<b>Link</b>: https://www.twitter.com/{status.user.screen_name}/status/{status.id_str}"
+                         f"<b>Link</b>: {link}"
             threading.Thread(target=self.send_telegram_message, args=(status_str,)).start()
         else:
-            print(f'SKIPPED: {status.text}')
+            insert_logger.info(f'SKIPPED: {status.text}\nLINK: {link}')
 
 
 class Twitter2Tg:
@@ -91,7 +94,7 @@ class Twitter2Tg:
 
     def setup_tg(self):
         try:
-            updater = Updater(token=ALTHEA_TOKEN)
+            updater = Updater(token=ALTHEA_TOKEN, request_kwargs={'read_timeout': 10, 'connect_timeout': 10})
             dispatcher = updater.dispatcher
             tg_follow_handler = CommandHandler('follow', self.follow)
             tg_unfollow_handler = CommandHandler('unfollow', self.unfollow)
@@ -99,10 +102,14 @@ class Twitter2Tg:
             dispatcher.add_handler(tg_follow_handler)
             dispatcher.add_handler(tg_unfollow_handler)
             dispatcher.add_handler(tg_check_follow_handler)
+            dispatcher.add_error_handler(self.error)
             updater.start_polling()
+            updater.idle()
         except Exception as e:
             insert_logger.exception(str(e))
 
+    def error(update, context):
+        insert_logger.exception('Update "%s" caused error "%s"', update, context.error)
 
     def follow(self, bot, update):
         if update.message.chat.id != self.chat_id:
@@ -168,10 +175,13 @@ class Twitter2Tg:
             insert_logger.exception(str(e))
 
 if __name__ == '__main__':
-    chat = input('Which chat are you posting to? Press 1 for nhb and 2 for test: ')
-    if chat == '1':
-        t2tg = Twitter2Tg('nhb')
-    elif chat == '2':
-        t2tg = Twitter2Tg('test')
-    else:
-        print('Invalid option.')
+    try:
+        chat = input('Which chat are you posting to? Press 1 for nhb and 2 for test: ')
+        if chat == '1':
+            t2tg = Twitter2Tg('nhb')
+        elif chat == '2':
+            t2tg = Twitter2Tg('test')
+        else:
+            print('Invalid option.')
+    except Exception as e:
+        insert_logger.exception(str(e))
