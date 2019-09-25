@@ -27,11 +27,24 @@ class MyStreamListener(tweepy.StreamListener):
         self.chat_id = chat_id
         self.following_names = following_names
 
-    def send_telegram_message(self, message):
-        try:
-            self.bot.send_message(chat_id=self.chat_id, text=message, parse_mode=telegram.ParseMode.HTML)
-        except Exception as e:
-            insert_logger.exception(str(e))
+    def send_telegram_message(self, status):
+        link = f'https://www.twitter.com/{status.user.screen_name}/status/{status.id_str}'
+        if self.post_criteria(status):
+        # if not hasattr(status, 'retweeted_status') and status.author.screen_name.lower() in self.following_names:
+            insert_logger.info(f'PASSED: {status.text}\nLINK: {link}')
+            if status.truncated:
+                tweet = status.extended_tweet['full_text']
+            else:
+                tweet = status.text
+            status_str = f"<b>Author</b>: {status.author.screen_name}\n" \
+                         f"<b>Tweet</b>: {tweet}\n" \
+                         f"<b>Link</b>: {link}"
+            try:
+                self.bot.send_message(chat_id=self.chat_id, text=status_str, parse_mode=telegram.ParseMode.HTML)
+            except Exception as e:
+                insert_logger.exception(str(e))
+        else:
+            insert_logger.info(f'SKIPPED: {status.text}\nLINK: {link}')
 
     def post_criteria(self, status):
         if hasattr(status, 'retweeted_status'):
@@ -44,20 +57,7 @@ class MyStreamListener(tweepy.StreamListener):
             return True
 
     def on_status(self, status):
-        link = f'https://www.twitter.com/{status.user.screen_name}/status/{status.id_str}'
-        if self.post_criteria(status):
-        # if not hasattr(status, 'retweeted_status') and status.author.screen_name.lower() in self.following_names:
-            insert_logger.info(f'PASSED: {status.text}\nLINK: {link}')
-            if status.truncated:
-                tweet = status.extended_tweet['full_text']
-            else:
-                tweet = status.text
-            status_str = f"<b>Author</b>: {status.author.screen_name}\n" \
-                         f"<b>Tweet</b>: {tweet}\n" \
-                         f"<b>Link</b>: {link}"
-            threading.Thread(target=self.send_telegram_message, args=(status_str,)).start()
-        else:
-            insert_logger.info(f'SKIPPED: {status.text}\nLINK: {link}')
+            threading.Thread(target=self.send_telegram_message, args=(status,)).start()
 
 
 class Twitter2Tg:
@@ -97,7 +97,7 @@ class Twitter2Tg:
                 exclude_replies=True, include_rts=False
             )
             insert_logger.info(self.following)
-            self.my_stream.filter(follow=self.following.values(), is_async=True)
+            self.my_stream.filter(follow=self.following.values(), is_async=True, stall_warnings=True)
             # self.my_stream.filter(track=['binance'], is_async=True)
         except Exception as e:
             insert_logger.exception(str(e))
