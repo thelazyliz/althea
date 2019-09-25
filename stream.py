@@ -33,9 +33,19 @@ class MyStreamListener(tweepy.StreamListener):
         except Exception as e:
             insert_logger.exception(str(e))
 
+    def post_criteria(self, status):
+        if hasattr(status, 'retweeted_status'):
+            return False
+        elif status.in_reply_to_screen_name and status.in_reply_to_screen_name != status.author.screen_name:
+            return False
+        elif status.author.screen_name.lower() not in self.following_names:
+            return False
+        else:
+            return True
+
     def on_status(self, status):
         link = f'https://www.twitter.com/{status.user.screen_name}/status/{status.id_str}'
-        if not hasattr(status, 'retweeted_status') and status.in_reply_to_screen_name == status.author.screen_name and status.author.screen_name.lower() in self.following_names:
+        if self.post_criteria(status):
         # if not hasattr(status, 'retweeted_status') and status.author.screen_name.lower() in self.following_names:
             insert_logger.info(f'PASSED: {status.text}\nLINK: {link}')
             if status.truncated:
