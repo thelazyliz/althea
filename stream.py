@@ -219,7 +219,7 @@ class Twitter2Tg:
             update.message.reply_text('Cannot find this coin on CMC leh')
             return
         else:
-            cur_price = resp['data']['quote']['USD']['price']
+            cur_price = resp['data'][coin]['quote']['USD']['price']
             cur_time = int(time.time())
             self.positions_df.append({
                 'username': user,
@@ -288,7 +288,7 @@ class Twitter2Tg:
             update.message.reply_text('Cannot find this coin on CMC leh')
             return
         else:
-            cur_price = resp['data']['quote']['USD']['price']
+            cur_price = resp['data'][coin]['quote']['USD']['price']
             cur_time = int(time.time())
             open_price = self.positions_df.loc[[index_number]]['open_price']
             self.positions_df.loc[[index_number]]['close_price'] = cur_price
