@@ -73,7 +73,6 @@ class Twitter2Tg:
         self.my_stream = None
         self.filename = 'files/following.txt'
         self.positions_csv = 'files/positions.csv'
-        self.positions_df = pd.read_csv(self.positions_csv, index_col='index')
         self.bot = telegram.Bot(token=ALTHEA_TOKEN)
         auth = tweepy.OAuthHandler(CONSUMER_KEY, CONSUMER_SECRET)
         auth.set_access_token(ACCESS_KEY, ACCESS_SECRET)
@@ -85,8 +84,9 @@ class Twitter2Tg:
             insert_logger.info(f'following.txt is empty')
         self.setup_tg()
         if not os.path.exists(self.positions_csv):
-            with open(self.positions_csv, 'w') as f:
+            with open(self.positions_csv, 'w+') as f:
                 f.write('index,username,coin,open_price,open_time,close_price,close_time,open_recorded_by,close_recorded_by,return_rate')
+        self.positions_df = pd.read_csv(self.positions_csv, index_col='index')
 
     def init_following_ids(self):
         try:
@@ -221,7 +221,7 @@ class Twitter2Tg:
         else:
             cur_price = resp['data'][coin]['quote']['USD']['price']
             cur_time = int(time.time())
-            self.positions_df.append({
+            self.positions_df = self.positions_df.append({
                 'username': user,
                 'coin': coin,
                 'open_price': cur_price,
@@ -231,14 +231,14 @@ class Twitter2Tg:
                 'open_recorded_by': update.message.from_user.username,
                 'close_recorded_by': None,
                 'return_rate': None
-            })
+            }, ignore_index=True)
             self.positions_df.to_csv(self.positions_csv, index_label='index')
             update.message.reply_text(
                 f"Successfully added your position for {coin} at ${cur_price} USD at time "
                 f"{time.strftime('%Y-%m-%d %H:%M:%S UTC+0', time.gmtime(cur_time))}"
             )
             self.bot.send_message(
-                chat_id=self.chat_id, text=self.positions_df.to_html(), parse_mode=telegram.ParseMode.HTML
+                chat_id=self.chat_id, text=self.positions_df.to_string(), parse_mode=telegram.ParseMode.HTML
             )
 
     def close_position(self, bot, update):
@@ -267,7 +267,8 @@ class Twitter2Tg:
         if user not in self.following.keys():
             update.message.reply_text('You are not following this person')
             return
-        open_positions = self.positions_df[self.positions_df['coin'] == coin and self.positions_df['close'] is None]
+        open_positions = self.positions_df[(self.positions_df['coin'] == coin) & (self.positions_df['close_price'].isna())]
+        print(open_positions)
         if len(open_positions) == 0:
             update.message.reply_text("I can't find an open position with this ticker.")
             return
@@ -278,7 +279,7 @@ class Twitter2Tg:
                     'Please repeat the command and include index number.'
                 )
                 self.bot.send_message(
-                    chat_id=self.chat_id, text=open_positions.to_html(), parse_mode=telegram.ParseMode.HTML
+                    chat_id=self.chat_id, text=open_positions.to_string(), parse_mode=telegram.ParseMode.HTML
                 )
                 return
         else:
@@ -291,17 +292,18 @@ class Twitter2Tg:
             cur_price = resp['data'][coin]['quote']['USD']['price']
             cur_time = int(time.time())
             open_price = self.positions_df.loc[[index_number]]['open_price']
-            self.positions_df.loc[[index_number]]['close_price'] = cur_price
-            self.positions_df.loc[[index_number]]['close_time'] = cur_time
-            self.positions_df.loc[[index_number]]['close_recorded_by'] = update.message.from_user.username
-            self.positions_df.loc[[index_number]]['return_rate'] = 1 - (cur_price/open_price).round(4)
+            self.positions_df.at[index_number, 'close_price'] = cur_price
+            self.positions_df.at[index_number, 'close_time'] = cur_time
+            self.positions_df['close_recorded_by'] = self.positions_df['close_recorded_by'].astype(str)
+            self.positions_df.at[index_number, 'close_recorded_by'] = update.message.from_user.username
+            self.positions_df.at[index_number, 'return_rate'] = 1 - (cur_price/open_price).round(4)
             self.positions_df.to_csv(self.positions_csv, index_label='index')
             update.message.reply_text(
                 f"Successfully closed your position for {coin} at ${cur_price} USD at time "
                 f"{time.strftime('%Y-%m-%d %H:%M:%S UTC+0', time.gmtime(cur_time))}"
             )
             self.bot.send_message(
-                chat_id=self.chat_id, text=self.positions_df.to_html(), parse_mode=telegram.ParseMode.HTML
+                chat_id=self.chat_id, text=self.positions_df.to_string(), parse_mode=telegram.ParseMode.HTML
             )
 
 
