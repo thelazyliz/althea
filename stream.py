@@ -73,6 +73,10 @@ class Twitter2Tg:
         self.my_stream = None
         self.filename = 'files/following.txt'
         self.positions_csv = 'files/positions.csv'
+        if not os.path.exists(self.positions_csv):
+            with open(self.positions_csv, 'w+') as f:
+                f.write('index,username,coin,open_price,open_time,close_price,close_time,open_recorded_by,close_recorded_by,return_rate')
+        self.positions_df = pd.read_csv(self.positions_csv, index_col='index')
         self.bot = telegram.Bot(token=ALTHEA_TOKEN)
         auth = tweepy.OAuthHandler(CONSUMER_KEY, CONSUMER_SECRET)
         auth.set_access_token(ACCESS_KEY, ACCESS_SECRET)
@@ -83,10 +87,6 @@ class Twitter2Tg:
         else:
             insert_logger.info(f'following.txt is empty')
         self.setup_tg()
-        if not os.path.exists(self.positions_csv):
-            with open(self.positions_csv, 'w+') as f:
-                f.write('index,username,coin,open_price,open_time,close_price,close_time,open_recorded_by,close_recorded_by,return_rate')
-        self.positions_df = pd.read_csv(self.positions_csv, index_col='index')
 
     def init_following_ids(self):
         try:
