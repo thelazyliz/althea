@@ -120,6 +120,7 @@ class Twitter2Tg:
             tg_check_follow_handler = CommandHandler('checkfollow', self.check_follow)
             tg_open_pos_handler = CommandHandler('open', self.open_position)
             tg_close_pos_handler = CommandHandler('close', self.close_position)
+            rg_check_pos_handler = CommandHandler('checkposition', self.check_position)
             dispatcher.add_handler(tg_follow_handler)
             dispatcher.add_handler(tg_unfollow_handler)
             dispatcher.add_handler(tg_check_follow_handler)
@@ -194,6 +195,16 @@ class Twitter2Tg:
                 update.message.reply_text('You are not authorized to use this bot.')
                 return
             update.message.reply_text(f'You are following: {", ".join(self.following.keys())}')
+        except Exception as e:
+            insert_logger.exception(str(e))
+
+    def check_position(self, bot, update):
+        try:
+            if update.message.chat.id != self.chat_id:
+                update.message.reply_text('You are not authorized to use this bot.')
+                return
+            update.message.reply_text(self.positions_df.to_string())
+            return
         except Exception as e:
             insert_logger.exception(str(e))
 
