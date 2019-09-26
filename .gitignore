@@ -4,4 +4,6 @@ __pycache__
 
 logs/*
 !logs/.gitkeep
-following.txt
+
+files/*
+!files/.gitkeep

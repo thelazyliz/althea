@@ -6,6 +6,10 @@ import threading
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 import telegram
 from cfg import *
+from cmc import get_market_quotes
+import re
+import os
+import pandas as pd
 
 logging.basicConfig(
     level=logging.INFO,
@@ -67,7 +71,9 @@ class Twitter2Tg:
         self.chat_id = TG_CHATS[chat_name]
         self.following = {}
         self.my_stream = None
-        self.filename = 'following.txt'
+        self.filename = 'files/following.txt'
+        self.positions_csv = 'files/positions.csv'
+        self.positions_df = pd.read_csv(self.positions_csv, index_col='index')
         self.bot = telegram.Bot(token=ALTHEA_TOKEN)
         auth = tweepy.OAuthHandler(CONSUMER_KEY, CONSUMER_SECRET)
         auth.set_access_token(ACCESS_KEY, ACCESS_SECRET)
@@ -78,6 +84,9 @@ class Twitter2Tg:
         else:
             insert_logger.info(f'following.txt is empty')
         self.setup_tg()
+        if not os.path.exists(self.positions_csv):
+            with open(self.positions_csv, 'w') as f:
+                f.write('index,username,coin,open_price,open_time,close_price,close_time,open_recorded_by,close_recorded_by,return_rate')
 
     def init_following_ids(self):
         try:
@@ -109,9 +118,13 @@ class Twitter2Tg:
             tg_follow_handler = CommandHandler('follow', self.follow)
             tg_unfollow_handler = CommandHandler('unfollow', self.unfollow)
             tg_check_follow_handler = CommandHandler('checkfollow', self.check_follow)
+            tg_open_pos_handler = CommandHandler('open', self.open_position)
+            tg_close_pos_handler = CommandHandler('close', self.close_position)
             dispatcher.add_handler(tg_follow_handler)
             dispatcher.add_handler(tg_unfollow_handler)
             dispatcher.add_handler(tg_check_follow_handler)
+            dispatcher.add_handler(tg_open_pos_handler)
+            dispatcher.add_handler(tg_close_pos_handler)
             dispatcher.add_error_handler(self.error)
             updater.start_polling()
             updater.idle()
@@ -167,7 +180,7 @@ class Twitter2Tg:
                 for i in d:
                     if i.lower() != f'{args.lower()}\n':
                         f.write(i)
-                f.truncate()
+                    f.truncate()
             del self.following[args.lower()]
             self.my_stream.disconnect()
             self.setup_twitter()
@@ -183,6 +196,114 @@ class Twitter2Tg:
             update.message.reply_text(f'You are following: {", ".join(self.following.keys())}')
         except Exception as e:
             insert_logger.exception(str(e))
+
+    def open_position(self, bot, update):
+        if update.message.chat.id != self.chat_id:
+            update.message.reply_text('You are not authorized to use this bot.')
+            return
+        try:
+            args = update.message.text.split(" ")
+            user = args[1].lower()
+            coin = args[2].upper()
+        except IndexError:
+            update.message.reply_text('Please type /open [twitter username] [coin ticker]')
+            return
+        if not re.match('\w+', coin):
+            update.message.reply_text('Only alphanumeric tickers are allowed')
+            return
+        if user not in self.following.keys():
+            update.message.reply_text('You are not following this person')
+            return
+        resp = get_market_quotes([coin])
+        if 'error' in resp:
+            update.message.reply_text('Cannot find this coin on CMC leh')
+            return
+        else:
+            cur_price = resp['data']['quote']['USD']['price']
+            cur_time = int(time.time())
+            self.positions_df.append({
+                'username': user,
+                'coin': coin,
+                'open_price': cur_price,
+                'open_time': cur_time,
+                'close_price': None,
+                'close_time': None,
+                'open_recorded_by': update.message.from_user.username,
+                'close_recorded_by': None,
+                'return_rate': None
+            })
+            self.positions_df.to_csv(self.positions_csv, index_label='index')
+            update.message.reply_text(
+                f"Successfully added your position for {coin} at ${cur_price} USD at time "
+                f"{time.strftime('%Y-%m-%d %H:%M:%S UTC+0', time.gmtime(cur_time))}"
+            )
+            self.bot.send_message(
+                chat_id=self.chat_id, text=self.positions_df.to_html(), parse_mode=telegram.ParseMode.HTML
+            )
+
+    def close_position(self, bot, update):
+        if update.message.chat.id != self.chat_id:
+            update.message.reply_text('You are not authorized to use this bot.')
+            return
+        try:
+            args = update.message.text.split(" ")
+            user = args[1].lower()
+            coin = args[2].upper()
+        except IndexError:
+            update.message.reply_text('Please type /close [twitter username] [coin ticker] [index number (optional)]')
+            return
+        if len(args) > 3:
+            try:
+                index_number = int(args[3])
+            except Exception as e:
+                insert_logger.exception(str(e))
+                update.message.reply_text('Are you sure you entered a valid number?')
+                return
+        else:
+            index_number = None
+        if not re.match('\w+', coin):
+            update.message.reply_text('Only alphanumeric tickers are allowed')
+            return
+        if user not in self.following.keys():
+            update.message.reply_text('You are not following this person')
+            return
+        open_positions = self.positions_df[self.positions_df['coin'] == coin and self.positions_df['close'] is None]
+        if len(open_positions) == 0:
+            update.message.reply_text("I can't find an open position with this ticker.")
+            return
+        elif len(open_positions) > 1:
+            if not index_number:
+                update.message.reply_text(
+                    'Hm there are more than 1 open trades involving this coin. '
+                    'Please repeat the command and include index number.'
+                )
+                self.bot.send_message(
+                    chat_id=self.chat_id, text=open_positions.to_html(), parse_mode=telegram.ParseMode.HTML
+                )
+                return
+        else:
+            index_number = open_positions.index[0]
+        resp = get_market_quotes([coin])
+        if 'error' in resp:
+            update.message.reply_text('Cannot find this coin on CMC leh')
+            return
+        else:
+            cur_price = resp['data']['quote']['USD']['price']
+            cur_time = int(time.time())
+            open_price = self.positions_df.loc[[index_number]]['open_price']
+            self.positions_df.loc[[index_number]]['close_price'] = cur_price
+            self.positions_df.loc[[index_number]]['close_time'] = cur_time
+            self.positions_df.loc[[index_number]]['close_recorded_by'] = update.message.from_user.username
+            self.positions_df.loc[[index_number]]['return_rate'] = 1 - (cur_price/open_price).round(4)
+            self.positions_df.to_csv(self.positions_csv, index_label='index')
+            update.message.reply_text(
+                f"Successfully closed your position for {coin} at ${cur_price} USD at time "
+                f"{time.strftime('%Y-%m-%d %H:%M:%S UTC+0', time.gmtime(cur_time))}"
+            )
+            self.bot.send_message(
+                chat_id=self.chat_id, text=self.positions_df.to_html(), parse_mode=telegram.ParseMode.HTML
+            )
+
 
 if __name__ == '__main__':
     try:
