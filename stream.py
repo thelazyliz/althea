@@ -1,9 +1,11 @@
 import tweepy
 from tweepy.error import TweepError
+from tweepy.models import Status
 import json
 import logging, time
 import threading
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from urllib3.exceptions import IncompleteRead
 import telegram
 from cfg import *
 from cmc import get_market_quotes
@@ -63,6 +65,58 @@ class MyStreamListener(tweepy.StreamListener):
     def on_status(self, status):
             threading.Thread(target=self.send_telegram_message, args=(status,)).start()
 
+    def on_data(self, raw_data):
+        """Called when raw data is received from connection.
+        Override this method if you wish to manually handle
+        the stream data. Return False to stop stream and close connection.
+        """
+        try:
+            data = json.loads(raw_data)
+
+            if 'in_reply_to_status_id' in data:
+                status = Status.parse(self.api, data)
+                if self.on_status(status) is False:
+                    return False
+            elif 'delete' in data:
+                delete = data['delete']['status']
+                if self.on_delete(delete['id'], delete['user_id']) is False:
+                    return False
+            elif 'event' in data:
+                status = Status.parse(self.api, data)
+                if self.on_event(status) is False:
+                    return False
+            elif 'direct_message' in data:
+                status = Status.parse(self.api, data)
+                if self.on_direct_message(status) is False:
+                    return False
+            elif 'friends' in data:
+                if self.on_friends(data['friends']) is False:
+                    return False
+            elif 'limit' in data:
+                if self.on_limit(data['limit']['track']) is False:
+                    return False
+            elif 'disconnect' in data:
+                if self.on_disconnect(data['disconnect']) is False:
+                    return False
+            elif 'warning' in data:
+                if self.on_warning(data['warning']) is False:
+                    return False
+            elif 'scrub_geo' in data:
+                if self.on_scrub_geo(data['scrub_geo']) is False:
+                    return False
+            elif 'status_withheld' in data:
+                if self.on_status_withheld(data['status_withheld']) is False:
+                    return False
+            elif 'user_withheld' in data:
+                if self.on_user_withheld(data['user_withheld']) is False:
+                    return False
+            else:
+                insert_logger.error("Unknown message type: %s", raw_data)
+        except IncompleteRead as e:
+            insert_logger.exception(str(e))
+            time.sleep(5)
+            return True
+        
 
 class Twitter2Tg:
 
@@ -218,13 +272,10 @@ class Twitter2Tg:
             user = args[1].lower()
             coin = args[2].upper()
         except IndexError:
-            update.message.reply_text('Please type /open [twitter username] [coin ticker]')
+            update.message.reply_text('Please type /open [username/identifier] [coin ticker]')
             return
         if not re.match('\w+', coin):
             update.message.reply_text('Only alphanumeric tickers are allowed')
-            return
-        if user not in self.following.keys():
-            update.message.reply_text('You are not following this person')
             return
         resp = get_market_quotes([coin])
         if 'error' in resp:
@@ -249,9 +300,6 @@ class Twitter2Tg:
                 f"Successfully added your position for {coin} at ${cur_price} USD at time "
                 f"{time.strftime('%Y-%m-%d %H:%M:%S UTC+0', time.gmtime(cur_time))}"
             )
-            self.bot.send_message(
-                chat_id=self.chat_id, text=self.positions_df.to_string(), parse_mode=telegram.ParseMode.HTML
-            )
 
     def close_position(self, bot, update):
         if update.message.chat.id != self.chat_id:
@@ -262,7 +310,7 @@ class Twitter2Tg:
             user = args[1].lower()
             coin = args[2].upper()
         except IndexError:
-            update.message.reply_text('Please type /close [twitter username] [coin ticker] [index number (optional)]')
+            update.message.reply_text('Please type /close [username/identifier] [coin ticker] [index number (optional)]')
             return
         if len(args) > 3:
             try:
@@ -276,10 +324,11 @@ class Twitter2Tg:
         if not re.match('\w+', coin):
             update.message.reply_text('Only alphanumeric tickers are allowed')
             return
-        if user not in self.following.keys():
-            update.message.reply_text('You are not following this person')
-            return
-        open_positions = self.positions_df[(self.positions_df['coin'] == coin) & (self.positions_df['close_price'].isna())]
+        open_positions = self.positions_df[
+            (self.positions_df['username'] == user) &
+            (self.positions_df['coin'] == coin) &
+            (self.positions_df['close_price'].isna())
+        ]
         print(open_positions)
         if len(open_positions) == 0:
             update.message.reply_text("I can't find an open position with this ticker.")
@@ -313,9 +362,6 @@ class Twitter2Tg:
             update.message.reply_text(
                 f"Successfully closed your position for {coin} at ${cur_price} USD at time "
                 f"{time.strftime('%Y-%m-%d %H:%M:%S UTC+0', time.gmtime(cur_time))}"
-            )
-            self.bot.send_message(
-                chat_id=self.chat_id, text=self.positions_df.to_string(), parse_mode=telegram.ParseMode.HTML
             )
 
 
