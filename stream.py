@@ -1,17 +1,22 @@
-import tweepy
+#! /usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+from cmc import get_market_quotes
+from settings import *
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from tweepy.error import TweepError
 from tweepy.models import Status
-import json
-import logging, time
-import threading
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from urllib3.exceptions import IncompleteRead
-import telegram
-from settings import *
-from cmc import get_market_quotes
-import re
+
+import json
 import os
 import pandas as pd
+import re
+import logging
+import telegram
+import threading
+import time
+import tweepy
 
 logging.basicConfig(
     level=logging.INFO,
