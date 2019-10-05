@@ -7,7 +7,7 @@ import threading
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from urllib3.exceptions import IncompleteRead
 import telegram
-from cfg import *
+from settings import *
 from cmc import get_market_quotes
 import re
 import os
