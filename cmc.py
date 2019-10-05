@@ -1,7 +1,7 @@
 import requests
 import time
 import logging
-from cfg import CMC_API_KEY
+from settings import CMC_API_KEY
 
 insert_logger = logging.getLogger('stream.py')
 

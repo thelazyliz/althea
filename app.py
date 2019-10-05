@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 import twitter
-from cfg import CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET
+from settings import CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET
 
 app = Flask(__name__)
 
