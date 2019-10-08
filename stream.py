@@ -6,14 +6,20 @@ import logging
 import time
 import threading
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
+from telegram.ext import DispatcherHandlerStop
 from urllib3.exceptions import IncompleteRead
+from tabulate import tabulate
+import pandas as pd
 import telegram
 from cfg import *
 from cmc import get_market_quotes
 from pgconnector import PostgresConnector
 import re
-from utils import prettify_position
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 insert_logger = logging.getLogger('stream.py')
 fh = logging.FileHandler(f'./logs/stream.log')
 fh.setLevel(logging.INFO)
@@ -119,7 +125,7 @@ class Twitter2Tg:
 
     def __init__(self, chat_name):
         insert_logger.info(f'starting new process for {chat_name}')
-        self.chat_id = TG_CHATS[chat_name]
+        self.chat_id = str(TG_CHATS[chat_name])
         self.following = {}
         self.my_stream = None
         self.filename = 'files/following.txt'
@@ -166,6 +172,7 @@ class Twitter2Tg:
             tg_open_pos_handler = CommandHandler('open', self.open_position)
             tg_close_pos_handler = CommandHandler('close', self.close_position)
             tg_check_pos_handler = CommandHandler('checkposition', self.check_position)
+            dispatcher.add_handler(MessageHandler(Filters.all, self.check_allowed), -1)
             dispatcher.add_handler(tg_follow_handler)
             dispatcher.add_handler(tg_unfollow_handler)
             dispatcher.add_handler(tg_check_follow_handler)
@@ -181,10 +188,11 @@ class Twitter2Tg:
     def error(self, update, context):
         insert_logger.exception('Update "%s" caused error "%s"', update, context.error)
 
+    def check_allowed(self, bot, update):
+        if str(update.message.chat.id) != self.chat_id:
+            raise DispatcherHandlerStop
+
     def follow(self, bot, update):
-        if update.message.chat.id != self.chat_id:
-            update.message.reply_text('You are not authorized to use this bot.')
-            return
         try:
             args = update.message.text.split(" ")[1]
         except IndexError:
@@ -209,9 +217,6 @@ class Twitter2Tg:
             insert_logger.exception(str(e))
 
     def unfollow(self, bot, update):
-        if update.message.chat.id != self.chat_id:
-            update.message.reply_text('You are not authorized to use this bot.')
-            return
         try:
             args = update.message.text.split(" ")[1]
         except IndexError:
@@ -237,23 +242,23 @@ class Twitter2Tg:
 
     def check_follow(self, bot, update):
         try:
-            if update.message.chat.id != self.chat_id:
-                update.message.reply_text('You are not authorized to use this bot.')
-                return
             update.message.reply_text(f'You are following: {", ".join(self.following.keys())}')
         except Exception as e:
             insert_logger.exception(str(e))
 
     ## *** THIS SECTION COMMANDS ARE FOR THE OPEN/CLOSE POSITION FEATURE ***
     def check_position(self, bot, update):
-        if update.message.chat.id != self.chat_id:
-            update.message.reply_text('You are not authorized to use this bot.')
-            return
         args = update.message.text.split(" ")
         try:
             mode = args[1].lower()
             if mode not in ['user', 'coin']:
-                update.message.reply_text(f'This mode does not exist')
+                update.message.reply_text(
+                    'Your arguments are not correct. '
+                    'Please type /checkposition [mode] [mode identifier] '
+                    '[open/close (optional)]\n\n'
+                    'Possible modes are `user` or `coin` at the moment',
+                    parse_mode=telegram.ParseMode.MARKDOWN
+                )
                 return
             kwargs = {}
             if mode == 'user':
@@ -268,30 +273,32 @@ class Twitter2Tg:
             pg = PostgresConnector(ALTHEA_DB_PATH)
             positions = pg.get_positions(self.chat_id, **kwargs)
             pg.close()
+            print(positions)
             if not positions:
                 update.message.reply_text(f'No positions found :(')
                 return
-            reply_string = prettify_position(positions)
-            update.message.reply_text(reply_string)
+            temp_df = pd.DataFrame(positions).drop(columns=['chat_id']).round(
+                2).fillna('')
+            reply_string = tabulate(temp_df.T, tablefmt='presto')
+            update.message.reply_text(f'```{reply_string}```', parse_mode=telegram.ParseMode.MARKDOWN)
             return
         except IndexError:
             update.message.reply_text(
-                'Your arguments are not correct.'
+                'Your arguments are not correct. '
                 'Please type /checkposition [mode] [mode identifier] '
                 '[open/close (optional)]\n\n'
-                'Possible modes are `user` or `coin` at the moment'
+                'Possible modes are `user` or `coin` at the moment',
+                parse_mode=telegram.ParseMode.MARKDOWN
             )
             return
 
     def open_position(self, bot, update):
-        if update.message.chat.id != self.chat_id:
-            update.message.reply_text('You are not authorized to use this bot.')
-            return
         args = update.message.text.split(" ")
         if len(args) != 3:
             update.message.reply_text(
                 'Only 2 arguments are allowed. '
-                'Please type /open [user] [coin]'
+                'Please type /open [user] [coin]',
+                parse_mode=telegram.ParseMode.MARKDOWN
             )
             return
         else:
@@ -312,7 +319,7 @@ class Twitter2Tg:
             return
         else:
             pg = PostgresConnector(ALTHEA_DB_PATH)
-            cur_price = float(resp['data'][coin]['quote']['USD']['price'])
+            cur_price = resp['data'][coin]['quote']['USD']['price']
             cur_time = int(time.time())
             added = pg.insert_position([
                 user,
@@ -335,13 +342,10 @@ class Twitter2Tg:
                 )
 
     def close_position(self, bot, update):
-        if update.message.chat.id != self.chat_id:
-            update.message.reply_text('You are not authorized to use this bot.')
-            return
         args = update.message.text.split(" ")
         try:
-            kwargs = {}
-            kwargs['user'] = args[1].lower()
+            kwargs = {'open_only': True}
+            kwargs['username'] = args[1].lower()
             kwargs['coin'] = args[2].upper()
             if len(args) == 4:
                 id = int(args[3])
@@ -356,11 +360,13 @@ class Twitter2Tg:
                 )
                 return
             elif len(positions) > 1:
-                reply_string = prettify_position(positions)
+                temp_df = pd.DataFrame(positions).drop(columns=['chat_id']).round(2).fillna('')
+                reply_string = tabulate(temp_df.T, tablefmt='presto')
                 update.message.reply_text(
                     'Multiple positions detected. '
                     'Please enter id as well.\n\n'
-                    + reply_string
+                    + f'```{reply_string}```',
+                    parse_mode=telegram.ParseMode.MARKDOWN
                 )
                 return
         except IndexError:
@@ -382,12 +388,12 @@ class Twitter2Tg:
         cur_time = int(time.time())
         pg = PostgresConnector(ALTHEA_DB_PATH)
         status = pg.close_position(
-            positions['id'],
+            positions[0]['id'],
             [
                 cur_price,
                 cur_time,
                 update.message.from_user.username,
-                cur_price/positions['open_price'] - 1
+                (cur_price/positions[0]['open_price'] - 1) * 100
             ]
         )
         pg.close()
