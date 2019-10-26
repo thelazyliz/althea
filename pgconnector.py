@@ -48,8 +48,8 @@ class PostgresConnector:
         :return:
         '''
         query = '''
-            insert into positions (username, coin, open_price, open_time, 
-            open_recorded_by, chat_id) 
+            insert into positions (username, coin, open_price, open_time,
+            open_recorded_by, chat_id)
             values (%s, %s, %s, to_timestamp(%s), %s, %s);
         '''
         try:
@@ -74,8 +74,8 @@ class PostgresConnector:
 
     def close_position(self, id, close_list):
         query = '''
-            update positions set close_price = %s, 
-            close_time = to_timestamp(%s), close_recorded_by = %s, 
+            update positions set close_price = %s,
+            close_time = to_timestamp(%s), close_recorded_by = %s,
             return_rate = %s where id = %s;
         '''
         try:
