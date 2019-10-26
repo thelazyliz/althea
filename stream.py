@@ -11,7 +11,8 @@ from urllib3.exceptions import IncompleteRead
 from tabulate import tabulate
 import pandas as pd
 import telegram
-from cfg import *
+from cfg import ALTHEA_TOKEN, ALTHEA_DB_PATH, TG_CHATS
+from cfg import CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET
 from cmc import get_market_quotes
 from pgconnector import PostgresConnector
 import re
@@ -23,7 +24,9 @@ logging.basicConfig(
 insert_logger = logging.getLogger('stream.py')
 fh = logging.FileHandler(f'./logs/stream.log')
 fh.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 fh.setFormatter(formatter)
 insert_logger.addHandler(fh)
 
@@ -37,9 +40,11 @@ class MyStreamListener(tweepy.StreamListener):
         self.following_names = following_names
 
     def send_telegram_message(self, status):
-        link = f'https://www.twitter.com/{status.user.screen_name}/status/{status.id_str}'
+        link = f'''
+            https://www.twitter.com/{status.user.screen_name}
+            /status/{status.id_str}
+        '''
         if self.post_criteria(status):
-        # if not hasattr(status, 'retweeted_status') and status.author.screen_name.lower() in self.following_names:
             insert_logger.info(f'PASSED: {status.text}\nLINK: {link}')
             if status.truncated:
                 tweet = status.extended_tweet['full_text']
@@ -49,7 +54,10 @@ class MyStreamListener(tweepy.StreamListener):
                          f"<b>Tweet</b>: {tweet}\n" \
                          f"<b>Link</b>: {link}"
             try:
-                self.bot.send_message(chat_id=self.chat_id, text=status_str, parse_mode=telegram.ParseMode.HTML)
+                self.bot.send_message(
+                    chat_id=self.chat_id, text=status_str,
+                    parse_mode=telegram.ParseMode.HTML
+                    )
             except Exception as e:
                 insert_logger.exception(str(e))
         else:
@@ -58,7 +66,8 @@ class MyStreamListener(tweepy.StreamListener):
     def post_criteria(self, status):
         if hasattr(status, 'retweeted_status'):
             return False
-        elif status.in_reply_to_screen_name and status.in_reply_to_screen_name != status.author.screen_name:
+        elif status.in_reply_to_screen_name and \
+                status.in_reply_to_screen_name != status.author.screen_name:
             return False
         elif status.author.screen_name.lower() not in self.following_names:
             return False
@@ -66,7 +75,9 @@ class MyStreamListener(tweepy.StreamListener):
             return True
 
     def on_status(self, status):
-            threading.Thread(target=self.send_telegram_message, args=(status,)).start()
+        threading.Thread(
+            target=self.send_telegram_message, args=(status,)
+        ).start()
 
     def on_data(self, raw_data):
         """Called when raw data is received from connection.
@@ -119,7 +130,7 @@ class MyStreamListener(tweepy.StreamListener):
             insert_logger.exception(str(e))
             time.sleep(5)
             return True
-        
+
 
 class Twitter2Tg:
 
@@ -145,34 +156,57 @@ class Twitter2Tg:
             with open(self.filename, 'r') as f:
                 following_names = f.read().splitlines()
             if following_names:
-                following_ids = [user.id_str for user in self.api.lookup_users(screen_names=following_names)]
+                following_ids = [
+                    user.id_str for user in
+                    self.api.lookup_users(screen_names=following_names)
+                ]
                 self.following = dict(zip(following_names, following_ids))
         except Exception as e:
             insert_logger.exception(str(e))
 
     def setup_twitter(self):
         try:
-            my_stream_listener = MyStreamListener(self.chat_id, list(self.following.keys()))
+            my_stream_listener = MyStreamListener(
+                self.chat_id, list(self.following.keys())
+            )
             self.my_stream = tweepy.Stream(
-                auth=self.api.auth, listener=my_stream_listener, tweet_mode='extended',
+                auth=self.api.auth, listener=my_stream_listener,
+                tweet_mode='extended',
                 exclude_replies=True, include_rts=False
             )
             insert_logger.info(self.following)
-            self.my_stream.filter(follow=self.following.values(), is_async=True, stall_warnings=True)
+            self.my_stream.filter(
+                follow=self.following.values(),
+                is_async=True,
+                stall_warnings=True
+            )
         except Exception as e:
             insert_logger.exception(str(e))
 
     def setup_tg(self):
         try:
-            updater = Updater(token=ALTHEA_TOKEN, request_kwargs={'read_timeout': 10, 'connect_timeout': 10})
+            updater = Updater(
+                token=ALTHEA_TOKEN,
+                request_kwargs={'read_timeout': 10, 'connect_timeout': 10}
+            )
             dispatcher = updater.dispatcher
             tg_follow_handler = CommandHandler('follow', self.follow)
             tg_unfollow_handler = CommandHandler('unfollow', self.unfollow)
-            tg_check_follow_handler = CommandHandler('checkfollow', self.check_follow)
-            tg_open_pos_handler = CommandHandler('open', self.open_position)
-            tg_close_pos_handler = CommandHandler('close', self.close_position)
-            tg_check_pos_handler = CommandHandler('checkposition', self.check_position)
-            dispatcher.add_handler(MessageHandler(Filters.all, self.check_allowed), -1)
+            tg_check_follow_handler = CommandHandler(
+                'checkfollow', self.check_follow
+            )
+            tg_open_pos_handler = CommandHandler(
+                'open', self.open_position
+            )
+            tg_close_pos_handler = CommandHandler(
+                'close', self.close_position
+            )
+            tg_check_pos_handler = CommandHandler(
+                'checkposition', self.check_position
+            )
+            dispatcher.add_handler(
+                MessageHandler(Filters.all, self.check_allowed), -1
+            )
             dispatcher.add_handler(tg_follow_handler)
             dispatcher.add_handler(tg_unfollow_handler)
             dispatcher.add_handler(tg_check_follow_handler)
@@ -186,7 +220,9 @@ class Twitter2Tg:
             insert_logger.exception(str(e))
 
     def error(self, update, context):
-        insert_logger.exception('Update "%s" caused error "%s"', update, context.error)
+        insert_logger.exception(
+            f'Update {update} caused error {context.error}'
+        )
 
     def check_allowed(self, bot, update):
         if str(update.message.chat.id) != self.chat_id:
@@ -209,10 +245,14 @@ class Twitter2Tg:
             if self.my_stream:
                 self.my_stream.disconnect()
             self.setup_twitter()
-            update.message.reply_text(f'{args} has been added to your following.')
+            update.message.reply_text(
+                f'{args} has been added to your following.'
+            )
         except TweepError as e:
             if '17' in str(e):
-                update.message.reply_text('Unable to find the username specified.')
+                update.message.reply_text(
+                    'Unable to find the username specified.'
+                )
         except Exception as e:
             insert_logger.exception(str(e))
 
@@ -220,7 +260,9 @@ class Twitter2Tg:
         try:
             args = update.message.text.split(" ")[1]
         except IndexError:
-            update.message.reply_text('Please type /unfollow [twitter username]')
+            update.message.reply_text(
+                'Please type /unfollow [twitter username]'
+            )
             return
         try:
             if args.lower() not in self.following.keys():
@@ -242,11 +284,13 @@ class Twitter2Tg:
 
     def check_follow(self, bot, update):
         try:
-            update.message.reply_text(f'You are following: {", ".join(self.following.keys())}')
+            update.message.reply_text(
+                f'You are following: {", ".join(self.following.keys())}'
+            )
         except Exception as e:
             insert_logger.exception(str(e))
 
-    ## *** THIS SECTION COMMANDS ARE FOR THE OPEN/CLOSE POSITION FEATURE ***
+    # *** THIS SECTION COMMANDS ARE FOR THE OPEN/CLOSE POSITION FEATURE ***
     def check_position(self, bot, update):
         args = update.message.text.split(" ")
         try:
@@ -280,7 +324,9 @@ class Twitter2Tg:
             temp_df = pd.DataFrame(positions).drop(columns=['chat_id']).round(
                 2).fillna('')
             reply_string = tabulate(temp_df.T, tablefmt='presto')
-            update.message.reply_text(f'```{reply_string}```', parse_mode=telegram.ParseMode.MARKDOWN)
+            update.message.reply_text(
+                f'```{reply_string}```', parse_mode=telegram.ParseMode.MARKDOWN
+            )
             return
         except IndexError:
             update.message.reply_text(
@@ -304,10 +350,10 @@ class Twitter2Tg:
         else:
             user = args[1].lower()
             coin = args[2].upper()
-        if not re.match('\w+', coin):
+        if not re.match(r'\w+', coin):
             update.message.reply_text('Only alphanumeric tickers are allowed')
             return
-        elif not re.match('[\w_]+', user):
+        elif not re.match(r'[\w_]+', user):
             update.message.reply_text(
                 'Identifiers can only contain alphanumeric '
                 'and underscore characters'
@@ -331,10 +377,11 @@ class Twitter2Tg:
             ])
             pg.close()
             if added:
+                time_fmt = '%Y-%m-%d %H:%M:%S UTC+0'
                 update.message.reply_text(
                     f'Successfully added your position for {coin} at '
                     f'${cur_price:.2f} USD at time '
-                    f'{time.strftime("%Y-%m-%d %H:%M:%S UTC+0", time.gmtime(cur_time))}'
+                    f'{time.strftime(time_fmt, time.gmtime(cur_time))}'
                 )
             else:
                 update.message.reply_text(
@@ -360,7 +407,9 @@ class Twitter2Tg:
                 )
                 return
             elif len(positions) > 1:
-                temp_df = pd.DataFrame(positions).drop(columns=['chat_id']).round(2).fillna('')
+                temp_df = pd.DataFrame(positions).drop(
+                    columns=['chat_id']
+                ).round(2).fillna('')
                 reply_string = tabulate(temp_df.T, tablefmt='presto')
                 update.message.reply_text(
                     'Multiple positions detected. '
@@ -398,9 +447,11 @@ class Twitter2Tg:
         )
         pg.close()
         if status:
+            time_fmt = '%Y-%m-%d %H:%M:%S UTC+0'
             update.message.reply_text(
-                f"Successfully closed your position for {kwargs['coin']} at ${cur_price:.2f} USD at time "
-                f"{time.strftime('%Y-%m-%d %H:%M:%S UTC+0', time.gmtime(cur_time))}"
+                f"Successfully closed your position for {kwargs['coin']} at "
+                f"${cur_price:.2f} USD at time "
+                f"{time.strftime(time_fmt, time.gmtime(cur_time))}"
             )
         else:
             update.message.reply_text(
@@ -410,7 +461,9 @@ class Twitter2Tg:
 
 if __name__ == '__main__':
     try:
-        chat = input('Which chat are you posting to? Press 1 for nhb and 2 for test: ')
+        chat = input(
+            'Which chat are you posting to? Press 1 for nhb and 2 for test: '
+        )
         if chat == '1':
             t2tg = Twitter2Tg('nhb')
         elif chat == '2':
