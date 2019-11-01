@@ -79,58 +79,6 @@ class MyStreamListener(tweepy.StreamListener):
             target=self.send_telegram_message, args=(status,)
         ).start()
 
-    def on_data(self, raw_data):
-        """Called when raw data is received from connection.
-        Override this method if you wish to manually handle
-        the stream data. Return False to stop stream and close connection.
-        """
-        try:
-            data = json.loads(raw_data)
-
-            if 'in_reply_to_status_id' in data:
-                status = Status.parse(self.api, data)
-                if self.on_status(status) is False:
-                    return False
-            elif 'delete' in data:
-                delete = data['delete']['status']
-                if self.on_delete(delete['id'], delete['user_id']) is False:
-                    return False
-            elif 'event' in data:
-                status = Status.parse(self.api, data)
-                if self.on_event(status) is False:
-                    return False
-            elif 'direct_message' in data:
-                status = Status.parse(self.api, data)
-                if self.on_direct_message(status) is False:
-                    return False
-            elif 'friends' in data:
-                if self.on_friends(data['friends']) is False:
-                    return False
-            elif 'limit' in data:
-                if self.on_limit(data['limit']['track']) is False:
-                    return False
-            elif 'disconnect' in data:
-                if self.on_disconnect(data['disconnect']) is False:
-                    return False
-            elif 'warning' in data:
-                if self.on_warning(data['warning']) is False:
-                    return False
-            elif 'scrub_geo' in data:
-                if self.on_scrub_geo(data['scrub_geo']) is False:
-                    return False
-            elif 'status_withheld' in data:
-                if self.on_status_withheld(data['status_withheld']) is False:
-                    return False
-            elif 'user_withheld' in data:
-                if self.on_user_withheld(data['user_withheld']) is False:
-                    return False
-            else:
-                insert_logger.error("Unknown message type: %s", raw_data)
-        except IncompleteRead as e:
-            insert_logger.exception(str(e))
-            time.sleep(5)
-            return True
-
 
 class Twitter2Tg:
 
@@ -180,6 +128,12 @@ class Twitter2Tg:
                 is_async=True,
                 stall_warnings=True
             )
+        except IncompleteRead:
+            insert_logger.info(
+                'CAUGHT INCOMPLETE READ. SETTING UP TWITTER AGAIN.'
+            )
+            self.my_stream.disconnect()
+            self.setup_twitter()
         except Exception as e:
             insert_logger.exception(str(e))
 
