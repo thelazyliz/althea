@@ -40,10 +40,8 @@ class MyStreamListener(tweepy.StreamListener):
         self.following_names = following_names
 
     def send_telegram_message(self, status):
-        link = f'''
-            https://www.twitter.com/{status.user.screen_name}
-            /status/{status.id_str}
-        '''
+        link = f'https://www.twitter.com/{status.user.screen_name}' \
+               f'/status/{status.id_str}'
         if self.post_criteria(status):
             insert_logger.info(f'PASSED: {status.text}\nLINK: {link}')
             if status.truncated:
