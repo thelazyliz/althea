@@ -64,9 +64,9 @@ class MyStreamListener(tweepy.StreamListener):
             return True
 
     def on_status(self, status):
-        threading.Thread(
-            target=self.send_telegram_message, args=(status,)
-        ).start()
+        # threading.Thread(
+        #     target=self.send_telegram_message, args=(status,)
+        # ).start()
         time.sleep(10)
 
 
