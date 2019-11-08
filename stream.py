@@ -8,7 +8,7 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram.ext import DispatcherHandlerStop
 from urllib3.exceptions import IncompleteRead, ProtocolError
 import telegram
-from cfg import ALTHEA_TOKEN, ALTHEA_DB_PATH, TG_CHATS
+from cfg import ALTHEA_TOKEN, TG_CHATS
 from cfg import CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET
 from pgconnector import PostgresConnector
 
@@ -64,11 +64,13 @@ class MyStreamListener(tweepy.StreamListener):
             return True
 
     def on_status(self, status):
-        # threading.Thread(
-        #     target=self.send_telegram_message, args=(status,)
-        # ).start()
-        print(status)
-        time.sleep(30)
+        threading.Thread(
+            target=self.send_telegram_message, args=(status,)
+        ).start()
+
+    def on_error(self, status_code):
+        insert_logger.warning(status_code)
+        return True
 
 
 class Twitter2Tg:
@@ -105,6 +107,7 @@ class Twitter2Tg:
 
     def setup_twitter(self):
         try:
+            insert_logger.info(list(self.following.keys()))
             my_stream_listener = MyStreamListener(
                 self.chat_id, list(self.following.keys())
             )
@@ -114,8 +117,8 @@ class Twitter2Tg:
                 exclude_replies=True, include_rts=False
             )
             self.my_stream.filter(
-                # follow=self.following.values(),
-                track=['btc'],
+                follow=self.following.values(),
+                # track=['btc'],
                 is_async=True,
                 stall_warnings=True
             )
