@@ -68,7 +68,7 @@ class MyStreamListener(tweepy.StreamListener):
         #     target=self.send_telegram_message, args=(status,)
         # ).start()
         print(status)
-        time.sleep(10)
+        time.sleep(30)
 
 
 class Twitter2Tg:
