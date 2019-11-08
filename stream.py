@@ -67,6 +67,7 @@ class MyStreamListener(tweepy.StreamListener):
         # threading.Thread(
         #     target=self.send_telegram_message, args=(status,)
         # ).start()
+        print(status)
         time.sleep(10)
 
 
@@ -114,6 +115,7 @@ class Twitter2Tg:
             )
             self.my_stream.filter(
                 # follow=self.following.values(),
+                track=['btc'],
                 is_async=True,
                 stall_warnings=True
             )
