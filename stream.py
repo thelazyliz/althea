@@ -1,28 +1,19 @@
 import tweepy
 from tweepy.error import TweepError
-from tweepy.models import Status
-import json
 import logging
 import time
+from datetime import datetime
 import threading
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram.ext import DispatcherHandlerStop
-from urllib3.exceptions import IncompleteRead
-from tabulate import tabulate
-import pandas as pd
+from urllib3.exceptions import IncompleteRead, ProtocolError
 import telegram
 from cfg import ALTHEA_TOKEN, ALTHEA_DB_PATH, TG_CHATS
 from cfg import CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET
-from cmc import get_market_quotes
 from pgconnector import PostgresConnector
-import re
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 insert_logger = logging.getLogger('stream.py')
-fh = logging.FileHandler(f'./logs/stream.log')
+fh = logging.FileHandler(f'./logs/{datetime.now().strftime("%Y-%m-%d")}.log')
 fh.setLevel(logging.INFO)
 formatter = logging.Formatter(
     '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -76,6 +67,7 @@ class MyStreamListener(tweepy.StreamListener):
         threading.Thread(
             target=self.send_telegram_message, args=(status,)
         ).start()
+        time.sleep(10)
 
 
 class Twitter2Tg:
@@ -120,20 +112,17 @@ class Twitter2Tg:
                 tweet_mode='extended',
                 exclude_replies=True, include_rts=False
             )
-            insert_logger.info(self.following)
             self.my_stream.filter(
-                follow=self.following.values(),
+                # follow=self.following.values(),
                 is_async=True,
                 stall_warnings=True
             )
-        except IncompleteRead:
-            insert_logger.info(
-                'CAUGHT INCOMPLETE READ. SETTING UP TWITTER AGAIN.'
+        except ProtocolError:
+            insert_logger.warning(
+                'Caught ProtocolError, trying again...'
             )
             self.my_stream.disconnect()
             self.setup_twitter()
-        except Exception as e:
-            insert_logger.exception(str(e))
 
     def setup_tg(self):
         try:
@@ -147,24 +136,12 @@ class Twitter2Tg:
             tg_check_follow_handler = CommandHandler(
                 'checkfollow', self.check_follow
             )
-            tg_open_pos_handler = CommandHandler(
-                'open', self.open_position
-            )
-            tg_close_pos_handler = CommandHandler(
-                'close', self.close_position
-            )
-            tg_check_pos_handler = CommandHandler(
-                'checkposition', self.check_position
-            )
             dispatcher.add_handler(
                 MessageHandler(Filters.all, self.check_allowed), -1
             )
             dispatcher.add_handler(tg_follow_handler)
             dispatcher.add_handler(tg_unfollow_handler)
             dispatcher.add_handler(tg_check_follow_handler)
-            dispatcher.add_handler(tg_open_pos_handler)
-            dispatcher.add_handler(tg_close_pos_handler)
-            dispatcher.add_handler(tg_check_pos_handler)
             dispatcher.add_error_handler(self.error)
             updater.start_polling()
             updater.idle()
@@ -241,174 +218,6 @@ class Twitter2Tg:
             )
         except Exception as e:
             insert_logger.exception(str(e))
-
-    # *** THIS SECTION COMMANDS ARE FOR THE OPEN/CLOSE POSITION FEATURE ***
-    def check_position(self, bot, update):
-        args = update.message.text.split(" ")
-        try:
-            mode = args[1].lower()
-            if mode not in ['user', 'coin']:
-                update.message.reply_text(
-                    'Your arguments are not correct. '
-                    'Please type /checkposition [mode] [mode identifier] '
-                    '[open/close (optional)]\n\n'
-                    'Possible modes are `user` or `coin` at the moment',
-                    parse_mode=telegram.ParseMode.MARKDOWN
-                )
-                return
-            kwargs = {}
-            if mode == 'user':
-                kwargs['username'] = args[2].lower()
-            else:
-                kwargs['coin'] = args[2].upper()
-            if len(args) == 4:
-                if args[3] == 'open':
-                    kwargs['open_only'] = True
-                elif args[3] == 'close':
-                    kwargs['close_only'] = True
-            pg = PostgresConnector(ALTHEA_DB_PATH)
-            positions = pg.get_positions(self.chat_id, **kwargs)
-            pg.close()
-            print(positions)
-            if not positions:
-                update.message.reply_text(f'No positions found :(')
-                return
-            temp_df = pd.DataFrame(positions).drop(columns=['chat_id']).round(
-                2).fillna('')
-            reply_string = tabulate(temp_df.T, tablefmt='presto')
-            update.message.reply_text(
-                f'```{reply_string}```', parse_mode=telegram.ParseMode.MARKDOWN
-            )
-            return
-        except IndexError:
-            update.message.reply_text(
-                'Your arguments are not correct. '
-                'Please type /checkposition [mode] [mode identifier] '
-                '[open/close (optional)]\n\n'
-                'Possible modes are `user` or `coin` at the moment',
-                parse_mode=telegram.ParseMode.MARKDOWN
-            )
-            return
-
-    def open_position(self, bot, update):
-        args = update.message.text.split(" ")
-        if len(args) != 3:
-            update.message.reply_text(
-                'Only 2 arguments are allowed. '
-                'Please type /open [user] [coin]',
-                parse_mode=telegram.ParseMode.MARKDOWN
-            )
-            return
-        else:
-            user = args[1].lower()
-            coin = args[2].upper()
-        if not re.match(r'\w+', coin):
-            update.message.reply_text('Only alphanumeric tickers are allowed')
-            return
-        elif not re.match(r'[\w_]+', user):
-            update.message.reply_text(
-                'Identifiers can only contain alphanumeric '
-                'and underscore characters'
-            )
-            return
-        resp = get_market_quotes([coin])
-        if 'error' in resp:
-            update.message.reply_text('Cannot find this coin on CMC leh')
-            return
-        else:
-            pg = PostgresConnector(ALTHEA_DB_PATH)
-            cur_price = resp['data'][coin]['quote']['USD']['price']
-            cur_time = int(time.time())
-            added = pg.insert_position([
-                user,
-                coin,
-                cur_price,
-                cur_time,
-                update.message.from_user.username,
-                self.chat_id
-            ])
-            pg.close()
-            if added:
-                time_fmt = '%Y-%m-%d %H:%M:%S UTC+0'
-                update.message.reply_text(
-                    f'Successfully added your position for {coin} at '
-                    f'${cur_price:.2f} USD at time '
-                    f'{time.strftime(time_fmt, time.gmtime(cur_time))}'
-                )
-            else:
-                update.message.reply_text(
-                    'Could not add for some reason! Check logs please.'
-                )
-
-    def close_position(self, bot, update):
-        args = update.message.text.split(" ")
-        try:
-            kwargs = {'open_only': True}
-            kwargs['username'] = args[1].lower()
-            kwargs['coin'] = args[2].upper()
-            if len(args) == 4:
-                id = int(args[3])
-                kwargs['id'] = id
-            pg = PostgresConnector(ALTHEA_DB_PATH)
-            positions = pg.get_positions(self.chat_id, **kwargs)
-            pg.close()
-            if not positions:
-                update.message.reply_text(
-                    'Could not find your position. '
-                    'Try using /checkposition first'
-                )
-                return
-            elif len(positions) > 1:
-                temp_df = pd.DataFrame(positions).drop(
-                    columns=['chat_id']
-                ).round(2).fillna('')
-                reply_string = tabulate(temp_df.T, tablefmt='presto')
-                update.message.reply_text(
-                    'Multiple positions detected. '
-                    'Please enter id as well.\n\n'
-                    + f'```{reply_string}```',
-                    parse_mode=telegram.ParseMode.MARKDOWN
-                )
-                return
-        except IndexError:
-            update.message.reply_text(
-                'Only 3 arguments are allowed. '
-                'Please type /close [user] [coin] [id (optional)]'
-            )
-            return
-        except ValueError:
-            update.message.reply_text(
-                'The id provided is not a number.'
-            )
-            return
-        resp = get_market_quotes([kwargs['coin']])
-        if 'error' in resp:
-            update.message.reply_text('Cannot find this coin on CMC leh')
-            return
-        cur_price = resp['data'][kwargs['coin']]['quote']['USD']['price']
-        cur_time = int(time.time())
-        pg = PostgresConnector(ALTHEA_DB_PATH)
-        status = pg.close_position(
-            positions[0]['id'],
-            [
-                cur_price,
-                cur_time,
-                update.message.from_user.username,
-                (cur_price/positions[0]['open_price'] - 1) * 100
-            ]
-        )
-        pg.close()
-        if status:
-            time_fmt = '%Y-%m-%d %H:%M:%S UTC+0'
-            update.message.reply_text(
-                f"Successfully closed your position for {kwargs['coin']} at "
-                f"${cur_price:.2f} USD at time "
-                f"{time.strftime(time_fmt, time.gmtime(cur_time))}"
-            )
-        else:
-            update.message.reply_text(
-                'Could not close position for some reason! Check logs please.'
-            )
 
 
 if __name__ == '__main__':
