@@ -10,8 +10,11 @@ from urllib3.exceptions import IncompleteRead, ProtocolError
 import telegram
 from cfg import ALTHEA_TOKEN, TG_CHATS
 from cfg import CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET
-from pgconnector import PostgresConnector
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 insert_logger = logging.getLogger('stream.py')
 fh = logging.FileHandler(f'./logs/{datetime.now().strftime("%Y-%m-%d")}.log')
 fh.setLevel(logging.INFO)
