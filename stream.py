@@ -121,14 +121,12 @@ class Twitter2Tg:
             )
             self.my_stream.filter(
                 follow=self.following.values(),
-                # track=['btc'],
                 is_async=True,
                 stall_warnings=True
             )
-        except ProtocolError:
-            insert_logger.warning(
-                'Caught ProtocolError, trying again...'
-            )
+        except Exception as twitter_e:
+            insert_logger.exception(str(twitter_e))
+            insert_logger.warning('Caught exception. Reconnecting...')
             self.my_stream.disconnect()
             self.setup_twitter()
 
