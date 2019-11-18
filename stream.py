@@ -78,9 +78,13 @@ class MyStreamListener(tweepy.StreamListener):
 
 class Twitter2Tg:
 
-    def __init__(self, chat_name):
+    def __init__(self, chat_name, master_name=None):
         insert_logger.info(f'starting new process for {chat_name}')
         self.chat_id = str(TG_CHATS[chat_name])
+        if master_name is None:
+            self.bot_master_id = str(TG_CHATS[chat_name])
+        else:
+            self.bot_master_id = str(TG_CHATS[master_name])
         self.following = {}
         self.my_stream = None
         self.filename = 'files/following.txt'
@@ -227,15 +231,16 @@ class Twitter2Tg:
 
 
 if __name__ == '__main__':
+    from helpers import choose_option
     try:
-        chat = input(
-            'Which chat are you posting to? Press 1 for nhb and 2 for test: '
+        choice_send = choose_option(
+            list(TG_CHATS.keys()),
+            title='Choose a telegram chat to send to.'
         )
-        if chat == '1':
-            t2tg = Twitter2Tg('nhb')
-        elif chat == '2':
-            t2tg = Twitter2Tg('test')
-        else:
-            print('Invalid option.')
+        choice_ctrl = choose_option(
+            list(TG_CHATS.keys()),
+            title='Choose a telegram chat for bot control.'
+        )
+        t2tg = Twitter2Tg(choice_send, choice_ctrl)
     except Exception as e:
         insert_logger.exception(str(e))
