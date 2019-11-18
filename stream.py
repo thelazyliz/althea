@@ -164,7 +164,7 @@ class Twitter2Tg:
         )
 
     def check_allowed(self, bot, update):
-        if str(update.message.chat.id) != self.chat_id:
+        if str(update.message.chat.id) != self.bot_master_id:
             raise DispatcherHandlerStop
 
     def follow(self, bot, update):
