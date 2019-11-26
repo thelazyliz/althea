@@ -8,6 +8,7 @@ from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram.ext import DispatcherHandlerStop
 from urllib3.exceptions import IncompleteRead, ProtocolError
 import telegram
+import sys
 from cfg import ALTHEA_TOKEN, TG_CHATS
 from cfg import CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET
 
@@ -70,6 +71,12 @@ class MyStreamListener(tweepy.StreamListener):
         threading.Thread(
             target=self.send_telegram_message, args=(status,)
         ).start()
+
+    def on_exception(self, exception):
+        insert_logger.exception(exception)
+        insert_logger.error('caught exception in thread')
+        return True
+        # sys.exit()
 
     def on_error(self, status_code):
         insert_logger.warning(status_code)
