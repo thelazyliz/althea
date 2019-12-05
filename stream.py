@@ -9,7 +9,7 @@ from telegram.ext import DispatcherHandlerStop
 from urllib3.exceptions import IncompleteRead, ProtocolError
 import telegram
 import sys
-from cfg import ALTHEA_TOKEN, TG_CHATS
+from cfg import ALTHEA_TOKEN, TG_CHATS, TG_LOG_CHAT
 from cfg import CONSUMER_KEY, CONSUMER_SECRET, ACCESS_KEY, ACCESS_SECRET
 
 logging.basicConfig(
@@ -50,7 +50,7 @@ class MyStreamListener(tweepy.StreamListener):
                 self.bot.send_message(
                     chat_id=self.chat_id, text=status_str,
                     parse_mode=telegram.ParseMode.HTML
-                    )
+                )
             except Exception as e:
                 insert_logger.exception(str(e))
         else:
@@ -75,8 +75,10 @@ class MyStreamListener(tweepy.StreamListener):
     def on_exception(self, exception):
         insert_logger.exception(exception)
         insert_logger.error('caught exception in thread')
-        return True
-        # sys.exit()
+        self.bot.send_message(
+            chat_id=TG_LOG_CHAT['me'], text='caught in streamlistener'
+        )
+        sys.exit()
 
     def on_error(self, status_code):
         insert_logger.warning(status_code)
@@ -102,6 +104,8 @@ class Twitter2Tg:
         self.init_following_ids()
         if self.following:
             self.setup_twitter()
+            t = threading.Thread(target=self.twitter_watch, daemon=True)
+            t.start()
         else:
             insert_logger.info(f'following.txt is empty')
         self.setup_tg()
@@ -164,6 +168,18 @@ class Twitter2Tg:
             updater.idle()
         except Exception as e:
             insert_logger.exception(str(e))
+
+    def twitter_watch(self):
+        while True:
+            if not self.my_stream.running:
+                error_msg = 'twitter_watch: self.my_stream.running is false'
+                insert_logger.error(error_msg)
+                self.bot.send_message(
+                    chat_id=TG_LOG_CHAT['me'], text=error_msg
+                )
+                self.my_stream.disconnect()
+                self.setup_twitter()
+            time.sleep(10)
 
     def error(self, update, context):
         insert_logger.exception(
