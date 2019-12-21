@@ -6,7 +6,6 @@ from datetime import datetime
 import threading
 from telegram.ext import Updater, CommandHandler, MessageHandler, Filters
 from telegram.ext import DispatcherHandlerStop
-from urllib3.exceptions import IncompleteRead, ProtocolError
 import telegram
 import sys
 from cfg import ALTHEA_TOKEN, TG_CHATS, TG_LOG_CHAT
