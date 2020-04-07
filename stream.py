@@ -44,7 +44,8 @@ class MyStreamListener(tweepy.StreamListener):
                 tweet = status.text
             status_str = f"<b>Author</b>: {status.author.screen_name}\n" \
                          f"<b>Tweet</b>: {tweet}\n" \
-                         f"<b>Link</b>: {link}"
+                         f"<b>Link</b>: {link}" \
+                         f"<b>Timestamp</b>: {status.created_at}"
             try:
                 self.bot.send_message(
                     chat_id=self.chat_id, text=status_str,
