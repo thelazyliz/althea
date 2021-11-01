@@ -8,10 +8,10 @@
 - requests 2.22.0
 
 ## what it does 
-Forward tweets on twitter to telegram using twitter streaming API.
+forward tweets on twitter to telegram using twitter streaming api.
 
 ## disclaimer
-Occasionally the bot may be disconnected from the stream. While it will
+occasionally the bot may be disconnected from the stream. while it will
 automatically reconnect on its own, a few tweets may be dropped
-in between the time it was disconnected and reconnected. Use another
+in between the time it was disconnected and reconnected. use another
 solution if integrity of tweets are important.
